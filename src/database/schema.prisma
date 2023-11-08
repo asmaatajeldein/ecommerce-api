@@ -1,0 +1,355 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator erd {
+  provider    = "prisma-erd-generator"
+  output      = "./ERD.svg"
+  theme       = "forest"
+  ignoreEnums = true
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  firstName   String   @map("first_name") @db.VarChar(20)
+  lastName    String   @map("last_name") @db.VarChar(20)
+  email       String   @unique @db.VarChar(20)
+  password    String
+  phoneNumber String   @map("phone_number") @db.VarChar(20)
+  gender      Gender
+  birthDate   DateTime @map("birth_date") @db.Date()
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  hashedRt    String?  @map("hashed_rt") @db.VarChar()
+  role        Role
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([email, role])
+  @@map("user")
+}
+
+model Customer {
+  id               Int    @id @default(autoincrement())
+  stripeCustomerId String @unique @map("stripe_customer_id") @db.VarChar()
+
+  userInfo          User[]
+  wishlists         Wishlist[]
+  cartItems         ProductCustomer[]
+  addresses         Address[]
+  orders            Order[]
+  orderTransactions OrderTransaction[]
+  history           History[]
+
+  @@map("customer")
+}
+
+// Have to do some checking
+model Category {
+  id       Int    @id @default(autoincrement())
+  name     String @unique @db.VarChar(20)
+  parentId Int?   @map("parent_id") // null means root
+
+  category        Category?  @relation("childCategories", fields: parentId, references: [id], onDelete: Cascade)
+  childCategories Category[] @relation("childCategories")
+
+  products Product[]
+  details  Detail[]
+
+  @@map("category")
+}
+
+model Brand {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique @db.VarChar(20)
+  products Product[]
+
+  @@map("brand")
+}
+
+model Product {
+  id          Int     @id @default(autoincrement())
+  gtin        Int     @default(autoincrement())
+  name        String  @db.VarChar()
+  description String? @db.VarChar()
+
+  categoryId Int      @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  brandId    Int      @map("brand_id")
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  variants ProductVariant[]
+  history  History[]
+
+  @@map("product")
+}
+
+model ProductCustomer {
+  id       Int @id @default(autoincrement())
+  quantity Int @default(1) @db.SmallInt()
+
+  customerId       Int?           @map("customer_id")
+  customer         Customer?      @relation(fields: [customerId], references: [id])
+  productVariantId Int            @map("product_variant_id")
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productVariantId])
+  @@map("product_customer")
+}
+
+model Country {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+  code String @unique @db.VarChar(3)
+
+  regions Region[]
+
+  @@map("country")
+}
+
+model Region {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
+
+  countryId Int     @map("country_id")
+  country   Country @relation(fields: [countryId], references: [id])
+
+  cities City[]
+
+  @@unique([name, countryId])
+  @@map("region")
+}
+
+model City {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(50)
+
+  regionId Int    @map("region_id")
+  region   Region @relation(fields: [regionId], references: [id])
+
+  addresses Address[]
+
+  @@unique([name, regionId])
+  @@map("city")
+}
+
+model Address {
+  id       Int     @id @default(autoincrement())
+  address1 String
+  address2 String
+  default  Boolean @default(false)
+
+  cityId     Int      @map("city_id")
+  city       City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  customerId Int      @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  orders Order[]
+
+  @@map("address")
+}
+
+model Voucher {
+  id                 Int    @id @default(autoincrement())
+  code               String @unique @db.VarChar(10)
+  percentageDiscount Int    @map("percentage_discount") @db.SmallInt()
+  upperLimit         Int    @map("upper_limit") @db.SmallInt()
+
+  orders Order[]
+
+  @@map("voucher")
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  status    Status   @default(PENDING)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  customerId Int?      @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  voucherId  Int?      @map("voucher_id")
+  voucher    Voucher?  @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  addressId  Int?      @map("address_id")
+  address    Address?  @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  orderProduct      OrderProduct[]
+  orderTransactions OrderTransaction[]
+
+  @@map("order")
+}
+
+model OrderProduct {
+  orderId          Int            @map("order_id")
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariantId Int            @map("product_variant_id")
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  price            Int            @db.Integer
+  quantity         Int            @db.SmallInt()
+
+  @@id([orderId, productVariantId])
+  @@map("order_product")
+}
+
+model OrderTransaction {
+  id            Int             @id @default(autoincrement())
+  paymentMethod PaymentMethod   @map("payment_method")
+  paymentState  PaymentState    @map("payment_state")
+  type          TransactionType
+  amount        Int             @db.Integer
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  orderId    Int?      @map("order_id")
+  order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customerId Int?      @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  @@map("order_transaction")
+}
+
+model Wishlist {
+  id        Int     @id @default(autoincrement())
+  title     String  @db.VarChar()
+  isPrivate Boolean @default(true) @map("is_private") @db.Boolean
+
+  customerId Int      @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  products ProductWishlist[]
+
+  @@unique([customerId, title])
+  @@map("wishlist")
+}
+
+model ProductWishlist {
+  wishlistId Int      @map("wishlist_id")
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+
+  productVariantId Int            @map("product_variant_id")
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+
+  @@id([wishlistId, productVariantId])
+  @@map("product_wishlist")
+}
+
+model History {
+  id Int @id @default(autoincrement())
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("history")
+}
+
+// represents the datatype which can be (e.g., text input, dropdown selection, checkbox)
+model Datatype {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar()
+
+  details Detail[]
+
+  @@map("datatype")
+}
+
+model Detail {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar()
+
+  categoryId Int      @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  datatypeId Int      @map("datatype_id")
+  datatype   Datatype @relation(fields: [datatypeId], references: [id], onDelete: Cascade)
+
+  values        DetailValue[]
+  variantDetail VariantDetail[]
+
+  @@unique([name, categoryId])
+  @@map("detail")
+}
+
+model DetailValue {
+  id    Int    @id @default(autoincrement())
+  value String @db.VarChar()
+
+  detailId Int    @map("detail_id")
+  detail   Detail @relation(fields: [detailId], references: [id], onDelete: Cascade)
+
+  variantDetail VariantDetail[]
+
+  @@map("detail_value")
+}
+
+model ProductVariant {
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku        String  @unique @db.VarChar()
+  name       String?
+  price      Int     @db.Integer
+  image      String
+  stockCount Int     @default(0) @map("stock_count") @db.SmallInt
+
+  details         VariantDetail[]
+  productCustomer ProductCustomer[]
+  orderProduct    OrderProduct[]
+  productWishlist ProductWishlist[]
+
+  @@map("product_variant")
+}
+
+model VariantDetail {
+  productVariantId Int            @map("product_variant_id")
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  detailId         Int            @map("detail_id")
+  detail           Detail         @relation(fields: [detailId], references: [id], onDelete: Cascade)
+  detailValueId    Int            @map("detail_value_id")
+  detailValue      DetailValue    @relation(fields: [detailValueId], references: [id], onDelete: Cascade)
+
+  @@id([productVariantId, detailId])
+  @@map("variant_detail")
+}
+
+enum Gender {
+  Female
+  Male
+}
+
+enum Role {
+  CUSTOMER
+  SUPERADMIN
+  ADMIN
+}
+
+enum Status {
+  PENDING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+enum PaymentState {
+  FAILED
+  SUCCEEDED
+  PENDING
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
